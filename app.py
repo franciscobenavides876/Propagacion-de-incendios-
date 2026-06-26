@@ -1,247 +1,103 @@
-import numpy as np
+import tkinter as tk
+from tkinter import messagebox
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# =====================================================================
-# 1. CONFIGURACIÓN DE PARÁMETROS DEL MODELO (Modifica estos valores aquí)
-# =====================================================================
-# Parámetros del foco inicial (Ecuación del PDF)
-A = 12.0       # Intensidad inicial del incendio (A > 0) [cite: 54]
-k = 15.0       # Dispersión espacial del riesgo (k > 0) [cite: 55]
-x0 = 0.0       # Coordenada X del foco inicial (x0) [cite: 50]
-y0 = 0.0       # Coordenada Y del foco inicial (y0) [cite: 50]
+# Importamos el módulo matemático
+import matematica as mat
 
-# Parámetros del terreno S(x,y)
-alpha = 1.5    # Influencia de la característica sobre la propagación (alpha > 0) [cite: 65]
-tipo_terreno = "Valle/Colina"  # Opciones: "Pendiente Lineal", "Valle/Colina", "Irregular"
+class AppIncendio:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Módulo 1: Foco de Incendio e Intensidad")
+        self.root.geometry("1100x600")
+        
+        # --- PANEL IZQUIERDO: CONFIGURACIÓN DE PARÁMETROS ---
+        panel_control = tk.Frame(root, width=250, padx=15, pady=15, bg="#f0f0f0")
+        panel_control.pack(side=tk.LEFT, fill=tk.Y)
+        
+        tk.Label(panel_control, text="Configuración del Foco", font=("Arial", 12, "bold"), bg="#f0f0f0").pack(pady=10)
+        
+        # Entradas de texto para las variables
+        self.entry_A = self.crear_campo(panel_control, "Intensidad Inicial (A > 0):", "10.0")
+        self.entry_k = self.crear_campo(panel_control, "Dispersión Espacial (k > 0):", "15.0")
+        self.entry_x0 = self.crear_campo(panel_control, "Coordenada X del Foco (x0):", "0.0")
+        self.entry_y0 = self.crear_campo(panel_control, "Coordenada Y del Foco (y0):", "0.0")
+        
+        # Botón para renderizar el modelo
+        btn_calcular = tk.Button(panel_control, text="Generar Modelo", command=self.procesar_y_graficar, font=("Arial", 10, "bold"), bg="#4CAF50", fg="white", padx=10, pady=5)
+        btn_calcular.pack(pady=20)
+        
+        # --- PANEL DERECHO: ESPACIO PARA LOS GRÁFICOS ---
+        self.panel_graficos = tk.Frame(root, bg="white")
+        self.panel_graficos.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Generar gráfico inicial por defecto
+        self.canvas = None
+        self.procesar_y_graficar()
 
-# Punto específico de la región para calcular la linealización/derivadas locales
-eval_x = 2.0
-eval_y = 2.0
+    def crear_campo(self, parent, text, default_val):
+        """Helper para construir etiquetas y campos de entrada fácilmente"""
+        tk.Label(parent, text=text, anchor="w", bg="#f0f0f0").pack(fill=tk.X, pady=(5, 0))
+        entry = tk.Entry(parent)
+        entry.insert(0, default_val)
+        entry.pack(fill=tk.X, pady=(0, 5))
+        return entry
 
-# =====================================================================
-# 2. DEFINICIÓN DE FUNCIONES MATEMÁTICAS
-# =====================================================================
+    def procesar_y_graficar(self):
+        try:
+            # 1. Recuperar los valores que el usuario ingresó en la interfaz
+            A = float(self.entry_A.get())
+            k = float(self.entry_k.get())
+            x0 = float(self.entry_x0.get())
+            y0 = float(self.entry_y0.get())
+            
+            # Validación matemática interactiva
+            if A <= 0 or k <= 0:
+                messagebox.showerror("Error de Parámetros", "Los parámetros A y k deben ser mayores estrictamente que 0.")
+                return
+                
+        except ValueError:
+            messagebox.showerror("Error de Entrada", "Por favor, introduce únicamente valores numéricos en los campos.")
+            return
 
-# Función S(x, y) que representa la topografía o densidad de vegetación [cite: 56, 66]
-def S(X, Y, tipo):
-    if tipo == "Pendiente Lineal":
-        return 0.4 * X + 0.2 * Y
-    elif tipo == "Valle/Colina":
-        return 4.0 * np.exp(-(X**2 + Y**2) / 12)
-    else:  # Terreno Irregular (Ondulado)
-        return np.sin(X) * np.cos(Y)
+        # 2. Consumir la lógica de matematica.py
+        X, Y = mat.inicializar_malla(x0, y0, radio_estudio=12, puntos=80)
+        Z_foco = mat.calcular_riesgo_foco(X, Y, A, k, x0, y0)
 
-# Función principal de riesgo P(x, y) dada en el PDF 
-def calcular_riesgo(X, Y, A, k, x0, y0, alpha, tipo_s):
-    termino_foco = A * np.exp(-((X - x0)**2 + (Y - y0)**2) / k)
-    termino_terreno = alpha * S(X, Y, tipo_s)
-    return termino_foco + termino_terreno
+        # 3. Dibujar/Actualizar los gráficos de Matplotlib dentro de Tkinter
+        if self.canvas:
+            self.canvas.get_tk_widget().destroy() # Limpiar el gráfico anterior si existe
+            plt.close('all')
 
-# =====================================================================
-# 3. PROCESAMIENTO MATEMÁTICO Y DE LA MALLA
-# =====================================================================
+        fig = plt.figure(figsize=(10, 5))
+        
+        # Subplot 1: Superficie 3D
+        ax1 = fig.add_subplot(121, projection='3d')
+        superficie = ax1.plot_surface(X, Y, Z_foco, cmap='inferno', edgecolor='none', alpha=0.8)
+        ax1.set_title(f'Superficie de Riesgo 3D (A={A}, k={k})', fontsize=10)
+        ax1.set_xlabel('X')
+        ax1.set_ylabel('Y')
+        fig.colorbar(superficie, ax=ax1, shrink=0.5, aspect=10)
+        
+        # Subplot 2: Curvas de Nivel
+        ax2 = fig.add_subplot(122)
+        curvas = ax2.contour(X, Y, Z_foco, levels=12, cmap='inferno')
+        ax2.clabel(curvas, inline=True, fontsize=8)
+        ax2.plot(x0, y0, 'ro', label=f'Foco ({x0}, {y0})')
+        ax2.set_title('Curvas de Nivel Circulares', fontsize=10)
+        ax2.grid(True, linestyle='--', alpha=0.5)
+        ax2.legend()
+        
+        fig.tight_layout()
 
-# Definición de la región bidimensional R [-10, 10] x [-10, 10] [cite: 42]
-x = np.linspace(-10, 10, 100)
-y = np.linspace(-10, 10, 100)
-X, Y = np.meshgrid(x, y)
+        # Incrustar el objeto de matplotlib dentro del contenedor de Tkinter
+        self.canvas = FigureCanvasTkAgg(fig, master=self.panel_graficos)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-# Calcular la superficie de riesgo P(x, y) [cite: 47, 78]
-P = calcular_riesgo(X, Y, A, k, x0, y0, alpha, tipo_terreno)
-
-# Cálculo numérico de las Derivadas Parciales (dP/dx, dP/dy) [cite: 83]
-dPy, dPx = np.gradient(P, y, x) 
-
-# Búsqueda de índices para la evaluación del punto específico en la terminal
-idx_x = (np.abs(x - eval_x)).argmin()
-idx_y = (np.abs(y - eval_y)).argmin()
-
-valor_p = P[idx_y, idx_x]
-grad_x = dPx[idx_y, idx_x]
-grad_y = dPy[idx_y, idx_x]
-magnitud_grad = np.sqrt(grad_x**2 + grad_y**2)
-
-# Imprimir el análisis matemático en la terminal (Consola)
-print("="*60)
-print("📊 INFORME MATEMÁTICO DEL MODELO DE PROPAGACIÓN")
-print("="*60)
-print(f"Punto evaluado de control: ({eval_x}, {eval_y})")
-print(f"• Nivel de Riesgo Local P(x,y): {valor_p:.4f}")
-print(f"• Derivada Parcial ∂P/∂x: {grad_x:.4f}")
-print(f"• Derivada Parcial ∂P/∂y: {grad_y:.4f}")
-print(f"• Magnitud del Vector Gradiente ||∇P||: {magnitud_grad:.4f}")
-print("-"*60)
-print(f"💡 INTERPRETACIÓN FÍSICA: En la posición ({eval_x}, {eval_y}), el incendio")
-print(f"tiende a propagarse con máxima velocidad hacia el vector [{grad_x:.3f}, {grad_y:.3f}].")
-print("="*60)
-
-# =====================================================================
-# 4. GRÁFICOS Y VISUALIZACIÓN (Matplotlib estándar)
-# =====================================================================
-
-# Crear una figura con dos paneles (2D y 3D)
-fig = plt.figure(figsize=(14, 6))
-
-# --- GRÁFICO 1: Mapa de Riesgo 2D, Curvas de Nivel y Gradientes ---
-ax1 = fig.add_subplot(121)
-# Curvas de nivel rellenas (Mapas de riesgo) [cite: 82]
-cp = ax1.contourf(X, Y, P, cmap="YlOrRd", levels=15)
-fig.colorbar(cp, ax=ax1, label="Nivel de Riesgo P(x,y)")
-
-# Dibujar las líneas de contorno específicas [cite: 79]
-lineas_nivel = ax1.contour(X, Y, P, colors='black', linewidths=0.5, levels=10)
-ax1.clabel(lineas_nivel, inline=True, fontsize=8)
-
-# Campos vectorialimport numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
-# =====================================================================
-# 1. CONFIGURACIÓN DE PARÁMETROS DEL MODELO (Modifica estos valores aquí)
-# =====================================================================
-# Parámetros del foco inicial (Ecuación del PDF)
-A = 12.0       # Intensidad inicial del incendio (A > 0) [cite: 54]
-k = 15.0       # Dispersión espacial del riesgo (k > 0) [cite: 55]
-x0 = 0.0       # Coordenada X del foco inicial (x0) [cite: 50]
-y0 = 0.0       # Coordenada Y del foco inicial (y0) [cite: 50]
-
-# Parámetros del terreno S(x,y)
-alpha = 1.5    # Influencia de la característica sobre la propagación (alpha > 0) [cite: 65]
-tipo_terreno = "Valle/Colina"  # Opciones: "Pendiente Lineal", "Valle/Colina", "Irregular"
-
-# Punto específico de la región para calcular la linealización/derivadas locales
-eval_x = 2.0
-eval_y = 2.0
-
-# =====================================================================
-# 2. DEFINICIÓN DE FUNCIONES MATEMÁTICAS
-# =====================================================================
-
-# Función S(x, y) que representa la topografía o densidad de vegetación [cite: 56, 66]
-def S(X, Y, tipo):
-    if tipo == "Pendiente Lineal":
-        return 0.4 * X + 0.2 * Y
-    elif tipo == "Valle/Colina":
-        return 4.0 * np.exp(-(X**2 + Y**2) / 12)
-    else:  # Terreno Irregular (Ondulado)
-        return np.sin(X) * np.cos(Y)
-
-# Función principal de riesgo P(x, y) dada en el PDF 
-def calcular_riesgo(X, Y, A, k, x0, y0, alpha, tipo_s):
-    termino_foco = A * np.exp(-((X - x0)**2 + (Y - y0)**2) / k)
-    termino_terreno = alpha * S(X, Y, tipo_s)
-    return termino_foco + termino_terreno
-
-# =====================================================================
-# 3. PROCESAMIENTO MATEMÁTICO Y DE LA MALLA
-# =====================================================================
-
-# Definición de la región bidimensional R [-10, 10] x [-10, 10] [cite: 42]
-x = np.linspace(-10, 10, 100)
-y = np.linspace(-10, 10, 100)
-X, Y = np.meshgrid(x, y)
-
-# Calcular la superficie de riesgo P(x, y) [cite: 47, 78]
-P = calcular_riesgo(X, Y, A, k, x0, y0, alpha, tipo_terreno)
-
-# Cálculo numérico de las Derivadas Parciales (dP/dx, dP/dy) [cite: 83]
-dPy, dPx = np.gradient(P, y, x) 
-
-# Búsqueda de índices para la evaluación del punto específico en la terminal
-idx_x = (np.abs(x - eval_x)).argmin()
-idx_y = (np.abs(y - eval_y)).argmin()
-
-valor_p = P[idx_y, idx_x]
-grad_x = dPx[idx_y, idx_x]
-grad_y = dPy[idx_y, idx_x]
-magnitud_grad = np.sqrt(grad_x**2 + grad_y**2)
-
-# Imprimir el análisis matemático en la terminal (Consola)
-print("="*60)
-print("📊 INFORME MATEMÁTICO DEL MODELO DE PROPAGACIÓN")
-print("="*60)
-print(f"Punto evaluado de control: ({eval_x}, {eval_y})")
-print(f"• Nivel de Riesgo Local P(x,y): {valor_p:.4f}")
-print(f"• Derivada Parcial ∂P/∂x: {grad_x:.4f}")
-print(f"• Derivada Parcial ∂P/∂y: {grad_y:.4f}")
-print(f"• Magnitud del Vector Gradiente ||∇P||: {magnitud_grad:.4f}")
-print("-"*60)
-print(f"💡 INTERPRETACIÓN FÍSICA: En la posición ({eval_x}, {eval_y}), el incendio")
-print(f"tiende a propagarse con máxima velocidad hacia el vector [{grad_x:.3f}, {grad_y:.3f}].")
-print("="*60)
-
-# =====================================================================
-# 4. GRÁFICOS Y VISUALIZACIÓN (Matplotlib estándar)
-# =====================================================================
-
-# Crear una figura con dos paneles (2D y 3D)
-fig = plt.figure(figsize=(14, 6))
-
-# --- GRÁFICO 1: Mapa de Riesgo 2D, Curvas de Nivel y Gradientes ---
-ax1 = fig.add_subplot(121)
-# Curvas de nivel rellenas (Mapas de riesgo) [cite: 82]
-cp = ax1.contourf(X, Y, P, cmap="YlOrRd", levels=15)
-fig.colorbar(cp, ax=ax1, label="Nivel de Riesgo P(x,y)")
-
-# Dibujar las líneas de contorno específicas [cite: 79]
-lineas_nivel = ax1.contour(X, Y, P, colors='black', linewidths=0.5, levels=10)
-ax1.clabel(lineas_nivel, inline=True, fontsize=8)
-
-# Campos vectoriales: Campo de vectores Gradiente (Quiver) [cite: 91]
-paso = 5  # Saltar puntos para evitar que se saturen las flechas
-ax1.quiver(X[::paso, ::paso], Y[::paso, ::paso], 
-           dPx[::paso, ::paso], dPy[::paso, ::paso], 
-           color='blue', alpha=0.5, scale=15, label="Gradiente ∇P")
-
-# Marcar el foco del incendio y el punto evaluado [cite: 114]
-ax1.plot(x0, y0, 'ro', markersize=8, label="Foco Inicial")
-ax1.plot(eval_x, eval_y, 'go', markersize=6, label=f"Punto Evaluado ({eval_x},{eval_y})")
-
-ax1.set_title("🗺️ Curvas de Nivel y Campo de Gradientes (2D)")
-ax1.set_xlabel("Eje X (Terreno)")
-ax1.set_ylabel("Eje Y (Terreno)")
-ax1.legend(loc="upper right")
-ax1.grid(True, linestyle="--", alpha=0.5)
-
-# --- GRÁFICO 2: Superficie de Riesgo 3D ---
-ax2 = fig.add_subplot(122, projection='3d')
-# Graficar la superficie multivariable 
-surf = ax2.plot_surface(X, Y, P, cmap="YlOrRd", edgecolor='none', alpha=0.85)
-fig.colorbar(surf, ax=ax2, shrink=0.5, aspect=7, label="Riesgo")
-
-ax2.set_title("⛰️ Superficie del Modelo de Riesgo (3D)")
-ax2.set_xlabel("Eje X")
-ax2.set_ylabel("Eje Y")
-ax2.set_zlabel("Riesgo P(x,y)")
-ax2.view_init(elev=35, azim=215) # Ángulo de visión inicial ajustable
-
-# Mostrar las ventanas de los gráficos en pantalla
-plt.tight_layout()
-plt.show()
-
-# Marcar el foco del incendio y el punto evaluado [cite: 114]
-ax1.plot(x0, y0, 'ro', markersize=8, label="Foco Inicial")
-ax1.plot(eval_x, eval_y, 'go', markersize=6, label=f"Punto Evaluado ({eval_x},{eval_y})")
-
-ax1.set_title("🗺️ Curvas de Nivel y Campo de Gradientes (2D)")
-ax1.set_xlabel("Eje X (Terreno)")
-ax1.set_ylabel("Eje Y (Terreno)")
-ax1.legend(loc="upper right")
-ax1.grid(True, linestyle="--", alpha=0.5)
-
-# --- GRÁFICO 2: Superficie de Riesgo 3D ---
-ax2 = fig.add_subplot(122, projection='3d')
-# Graficar la superficie multivariable 
-surf = ax2.plot_surface(X, Y, P, cmap="YlOrRd", edgecolor='none', alpha=0.85)
-fig.colorbar(surf, ax=ax2, shrink=0.5, aspect=7, label="Riesgo")
-
-ax2.set_title("⛰️ Superficie del Modelo de Riesgo (3D)")
-ax2.set_xlabel("Eje X")
-ax2.set_ylabel("Eje Y")
-ax2.set_zlabel("Riesgo P(x,y)")
-ax2.view_init(elev=35, azim=215) # Ángulo de visión inicial ajustable
-
-# Mostrar las ventanas de los gráficos en pantalla
-plt.tight_layout()
-plt.show()
+# Lanzamiento de la ventana
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AppIncendio(root)
+    root.mainloop()
