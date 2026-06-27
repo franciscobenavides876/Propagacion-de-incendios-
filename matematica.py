@@ -31,3 +31,20 @@ def calcular_derivadas_foco(X, Y, Z_foco, A, k, x0, y0):
     dF_dk = Z_foco * (distancia_cuadrado / (k**2))
     
     return dF_dA, dF_dk
+
+# --- APORTE TOMÁS: MÓDULO DE TERRENO Y VEGETACIÓN ---
+
+def calcular_terreno(X, Y, H, wx, wy):
+    """
+    Calcula la superficie topográfica S(x,y) de valles y crestas.
+    """
+    return H * np.sin(wx * X) * np.cos(wy * Y)
+
+def calcular_derivadas_terreno(X, Y, H, wx, wy):
+    """
+    Calcula analíticamente las derivadas parciales dS/dx y dS/dy 
+    para el campo vectorial del Integrante 3.
+    """
+    dS_dx = H * wx * np.cos(wx * X) * np.cos(wy * Y)
+    dS_dy = -H * wy * np.sin(wx * X) * np.sin(wy * Y)
+    return dS_dx, dS_dy
